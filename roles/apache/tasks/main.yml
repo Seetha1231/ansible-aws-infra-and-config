@@ -1,0 +1,14 @@
+---
+# tasks file for apache
+
+- name: Install apache on ec2 instances
+  yum: name=httpd state=latest
+- name: Enable(start) apache
+  service:
+    name: httpd
+    enabled: true
+    state: started
+- name: copy index.html to httpd
+  copy:
+    src: files/index.html
+    dest: /var/www/html
