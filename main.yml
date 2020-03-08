@@ -1,0 +1,48 @@
+- hosts: localhost
+  gather_facts: no
+  vars_files:
+    - vars.yml
+  vars_prompt:
+    - name: key_name
+      prompt: "Enter key name of ec2:"
+    - name: aws_access_key
+      prompt: "Enter AWS ACCESS KEY :"
+    - name: aws_secret_key
+      prompt: "Enter AWS SECRET KEY :"
+    - name: region
+      prompt: "Enter region :"
+    - name: ami
+      prompt: "Enter AMI :"
+    - name: my_ip_cidr
+      prompt: "Enter local machine's cidr address :"
+  # tasks:
+  roles:
+    - role: 'ec2'
+
+- hosts: webhost
+  gather_facts: no
+  remote_user: ec2-user
+  become: True
+  become_method: sudo
+  become_user: root
+  # become_ask_pass: False 
+  vars_files:
+    - vars.yml
+  roles:
+    - role: 'apache'
+
+
+# - hosts: webhost
+#   gather_facts: no
+#   tasks: 
+#     - name: Install apache on ec2 instances
+#       yum: name=httpd state=latest
+#     - name: Enable(start) apache
+#       service:
+#         name: httpd
+#         enabled: true
+#         state: started
+#     - name: copy index.html to httpd
+#       copy:
+#         src: files/index.html
+#         dest: /var/www/html

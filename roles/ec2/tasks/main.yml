@@ -1,0 +1,117 @@
+---
+# tasks file for ec2
+
+- name: Creating VPC
+  ec2_vpc_net:
+    aws_access_key: "{{ aws_access_key }}"
+    aws_secret_key: "{{ aws_secret_key }}"
+    ec2_region: "{{ region }}"
+    name: myvpc
+    cidr_block: 10.1.0.0/16
+  register: vpc
+- debug:
+    var: vpc.vpc.id
+
+- name: Creating Subnet
+  ec2_vpc_subnet:
+    aws_access_key: "{{ aws_access_key }}"
+    aws_secret_key: "{{ aws_secret_key }}"
+    map_public: yes
+    ec2_region: "{{ region }}"
+    state: present
+    vpc_id: "{{vpc.vpc.id}}"
+    cidr: 10.1.1.0/24
+  register: subnet
+
+- debug:
+    var: subnet.subnet.id
+
+- name: Creating Internet Gateway
+  ec2_vpc_igw:
+    aws_access_key: "{{ aws_access_key }}"
+    aws_secret_key: "{{ aws_secret_key }}"
+    vpc_id: "{{vpc.vpc.id}}"
+    ec2_region: "{{ region }}"
+    state: present
+  register: igw
+
+
+- name: Set up public subnet route table 
+  ec2_vpc_route_table:
+    aws_access_key: "{{ aws_access_key }}"
+    aws_secret_key: "{{ aws_secret_key }}"
+    vpc_id: "{{vpc.vpc.id}}"
+    ec2_region: "{{ region }}"
+    tags:
+      Name: Public
+    subnets:
+      - "{{subnet.subnet.id}}"
+    routes:
+      - dest: 0.0.0.0/0
+        gateway_id: "{{igw.gateway_id}}"
+  register: public_route_table
+
+- name: Creating security group 
+  ec2_group:
+    aws_access_key: "{{ aws_access_key}}"
+    aws_secret_key: "{{ aws_secret_key }}"
+    ec2_region: "{{ region }}"
+    name: WebSG
+    description: Security Group for web server
+    vpc_id: "{{vpc.vpc.id}}"
+    rules:
+      - proto: tcp
+        ports: 
+          - 80
+          - 443
+        cidr_ip: 0.0.0.0/0
+      - proto: tcp
+        from_port: 22 
+        to_port: 22
+        cidr_ip: "{{my_ip_cidr}}"
+    rules_egress:
+      - proto: all
+        cidr_ip: 0.0.0.0/0
+
+- name: Creating key pair for ec2 instance
+  ec2_key:
+    aws_access_key: "{{ aws_access_key }}"
+    aws_secret_key: "{{ aws_secret_key }}"
+    ec2_region: us-east-1
+    force: True
+    name: "{{key_name}}"
+    key_material: "{{ item }}"
+  with_file: ~/keys/id_rsa.pub
+
+
+- name: Create/Provisioning ec2 instance 
+  ec2:
+    aws_access_key: "{{ aws_access_key }}"
+    aws_secret_key: "{{ aws_secret_key }}"
+    ec2_region: "{{ region }}"
+    keypair: "{{key_name}}"
+    instance_type: t2.micro
+    image: "{{ ami }}"
+    assign_public_ip: yes
+    vpc_subnet_id: "{{subnet.subnet.id}}"
+    group: WebSG
+    wait: true
+    instance_tags:
+      Name: webserver
+  register: ec2
+
+- name: add host to inventory
+  add_host:
+    name: '{{ item.public_ip }}'
+    groups: webhost
+    ansible_ssh_private_key_file: ~/keys/id_rsa.pem
+  loop: '{{ ec2.instances }}'
+
+- name: Wait for SSH to come up
+  wait_for:
+   host: "{{ item.public_ip }}"
+   port: 22
+   delay: 150
+   timeout: 300
+  with_items: "{{ ec2.instances }}"
+  delegate_to: localhost
